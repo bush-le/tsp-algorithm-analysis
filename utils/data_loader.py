@@ -1,166 +1,247 @@
 import os
 import re
 import numpy as np
-# Import hàm tính khoảng cách (vectorized) đúng từ file distance.py
-from .distance import calculate_distance_matrix 
+import math
 
-def _load_optimum_solution(problem_name: str, data_dir: str = "data") -> list[int] | None:
+def _calculate_euc_2d_matrix(coords):
     """
-    Tải file giải pháp tối ưu (.opt.tour) nếu tồn tại.
-    Chuyển đổi từ 1-indexed (TSPLIB) sang 0-indexed (Python).
+    Tạo ma trận khoảng cách đầy đủ từ tọa độ EUC_2D.
+    Sử dụng tính toán vector hóa của NumPy để tăng tốc độ.
     """
-    path = os.path.join(data_dir, "optimum_solutions", f"{problem_name}.opt.tour")
+    n = len(coords)
+    # Chuyển đổi list of tuples [(id, x, y), ...] thành mảng NumPy [[x1, y1], [x2, y2], ...]
+    # Giả định coords đã được lọc và chỉ chứa (x, y) hoặc (id, x, y)
+    if len(coords[0]) == 3:
+        points = np.array([item[1:] for item in coords])
+    else:
+        points = np.array(coords)
+
+    # Tính toán sự khác biệt bình phương
+    # (n, 1, 2) - (1, n, 2) -> (n, n, 2)
+    diff = points[:, np.newaxis, :] - points[np.newaxis, :, :]
     
-    if not os.path.exists(path):
-        return None
+    # (n, n, 2) -> (n, n)
+    dist_sq = np.sum(diff**2, axis=-1)
+    
+    # Lấy căn bậc hai và làm tròn thành số nguyên
+    distances = np.sqrt(dist_sq)
+    return np.rint(distances).astype(int)
+
+def _parse_coord_data(coord_lines, dimension):
+    """
+    Phân tích cú pháp cho NODE_COORD_SECTION.
+    """
+    coords = []
+    for line in coord_lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            # Tách dữ liệu, hỗ trợ cả "1 10.5 20.3" và "1 10 20"
+            parts = [float(x) for x in line.split()]
+            if len(parts) >= 3:
+                # Định dạng: (id, x, y)
+                coords.append((int(parts[0]), parts[1], parts[2]))
+            elif len(parts) == 2:
+                 # Định dạng: (x, y) - một số file không có id
+                coords.append((len(coords) + 1, parts[0], parts[1]))
+        except ValueError:
+            # Bỏ qua các dòng không hợp lệ
+            continue
+    
+    if len(coords) != dimension:
+        print(f"Cảnh báo: Kích thước (DIMENSION) là {dimension} nhưng tìm thấy {len(coords)} tọa độ.")
         
-    tour = []
-    reading_tour = False
-    try:
-        with open(path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("TOUR_SECTION"):
-                    reading_tour = True
-                    continue
-                if line == "-1" or line.startswith("EOF"):
-                    break
-                if reading_tour:
-                    try:
-                        node_id = int(line)
-                        if node_id > 0:
-                            tour.append(node_id - 1) 
-                    except ValueError:
-                        continue 
-        
-        return tour if tour else None
-        
-    except Exception as e:
-        print(f"Lỗi khi đọc file tối ưu {path}: {e}")
-        return None
+    # Chỉ lấy các tọa độ (x, y) để tính toán
+    points = [(c[1], c[2]) for c in coords]
+    return _calculate_euc_2d_matrix(points)
 
 def _parse_explicit_matrix(matrix_lines, dimension, edge_weight_format):
     """
     Phân tích ma trận khoảng cách từ định dạng EXPLICIT.
-    Hỗ trợ: FULL_MATRIX và UPPER_ROW.
+    Hỗ trợ: FULL_MATRIX, UPPER_ROW, LOWER_ROW, và LOWER_DIAG_ROW.
     """
     
-    # Ghép tất cả các dòng dữ liệu thành một chuỗi và tách thành các số
     data_str = ' '.join(matrix_lines)
-    weights = [int(float(x)) for x in data_str.split()] # Làm tròn thành int
     
+    # === BẢN VÁ LỖI (HOTFIX) ===
+    # Sử dụng try-except để lọc các giá trị không phải số
+    # như 'DISPLAY_DATA_SECTION', 'EOF', v.v.
+    weights = []
+    for x in data_str.split():
+        try:
+            weights.append(int(float(x))) # Chỉ thêm nếu là số hợp lệ
+        except ValueError:
+            continue # Bỏ qua các chuỗi văn bản
+
     matrix = np.zeros((dimension, dimension), dtype=int)
-    k = 0 # Con trỏ cho mảng weights
+    k = 0 # Chỉ số cho list 'weights'
 
     if edge_weight_format == 'FULL_MATRIX':
         for i in range(dimension):
             for j in range(dimension):
-                if k >= len(weights): raise ValueError("Không đủ dữ liệu cho FULL_MATRIX.")
-                matrix[i, j] = weights[k]
-                k += 1
-                
+                if k < len(weights):
+                    matrix[i, j] = weights[k]
+                    k += 1
+                else:
+                    print(f"Lỗi: Dữ liệu FULL_MATRIX không đủ. Dừng ở ({i}, {j})")
+                    return matrix
+
     elif edge_weight_format == 'UPPER_ROW':
         for i in range(dimension):
             for j in range(i + 1, dimension):
-                if k >= len(weights): raise ValueError("Không đủ dữ liệu cho UPPER_ROW.")
-                matrix[i, j] = weights[k]
-                matrix[j, i] = weights[k] # Ma trận đối xứng
-                k += 1
+                if k < len(weights):
+                    matrix[i, j] = weights[k]
+                    matrix[j, i] = weights[k] # Đối xứng
+                    k += 1
+                else:
+                    print(f"Lỗi: Dữ liệu UPPER_ROW không đủ. Dừng ở ({i}, {j})")
+                    return matrix
+
+    elif edge_weight_format == 'LOWER_ROW':
+        for i in range(dimension):
+            for j in range(0, i):
+                if k < len(weights):
+                    matrix[i, j] = weights[k]
+                    matrix[j, i] = weights[k] # Đối xứng
+                    k += 1
+                else:
+                    print(f"Lỗi: Dữ liệu LOWER_ROW không đủ. Dừng ở ({i}, {j})")
+                    return matrix
+    
+    # === KHỐI CODE MỚI ĐƯỢC THÊM VÀO ===
+    elif edge_weight_format == 'LOWER_DIAG_ROW':
+        for i in range(dimension):
+            # j chạy từ 0 đến i (bao gồm cả i)
+            for j in range(i + 1): 
+                if k < len(weights):
+                    matrix[i, j] = weights[k]
+                    matrix[j, i] = weights[k] # Đối xứng
+                    k += 1
+                else:
+                    print(f"Lỗi: Dữ liệu LOWER_DIAG_ROW không đủ. Dừng ở ({i}, {j})")
+                    return matrix
+    # === KẾT THÚC KHỐI CODE MỚI ===
+
     else:
         raise NotImplementedError(f"Định dạng ma trận '{edge_weight_format}' chưa được hỗ trợ.")
-        
+
     return matrix
 
-def load_problem(problem_name: str, data_dir: str = "data") -> dict:
+def load_problem(problem_name, data_dir):
     """
-    Tải và phân tích cú pháp (parse) một file vấn đề TSPLIB (.tsp).
-    Hỗ trợ EUC_2D và EXPLICIT.
-    Tìm kiếm trong 'tsplib' và 'generated'.
+    Tải một bài toán TSP từ tên file.
+    Tự động tìm file .tsp trong /data/tsplib/ hoặc /data/generated/
+    và trả về ma trận khoảng cách cùng các thông tin khác.
     """
+    # Xây dựng đường dẫn file
+    if not problem_name.endswith('.tsp'):
+        problem_name += '.tsp'
     
-    # 1. LOGIC TÌM KIẾM (Đã thống nhất)
-    search_dirs = ["tsplib", "generated"]
-    tsp_path = None
-    
-    for subdir in search_dirs:
-        path = os.path.join(data_dir, subdir, f"{problem_name}.tsp")
-        if os.path.exists(path):
-            tsp_path = path
-            break
-            
-    if tsp_path is None:
-        raise FileNotFoundError(f"Không tìm thấy file {problem_name}.tsp trong "
-                                f"{[os.path.join(data_dir, d) for d in search_dirs]}")
+    # Ưu tiên tìm trong tsplib trước
+    file_path = os.path.join(data_dir, 'tsplib', problem_name)
+    if not os.path.exists(file_path):
+        # Nếu không thấy, tìm trong generated
+        file_path = os.path.join(data_dir, 'generated', problem_name)
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Không tìm thấy file '{problem_name}' trong cả 'tsplib' và 'generated'")
 
-    # 2. Phân tích file .tsp
-    coords = []
-    dimension = 0
-    reading_coords = False
-    reading_matrix = False
-    matrix_lines = []
-    
-    problem_name_from_file = problem_name
-    edge_weight_type = ""
-    edge_weight_format = ""
+    # Đọc metadata và data
+    metadata = {}
+    data_lines = []
+    current_section = None
 
-    with open(tsp_path, 'r') as f:
+    with open(file_path, 'r') as f:
         for line in f:
             line = line.strip()
             
-            if ":" in line:
-                key, value = [s.strip() for s in line.split(":", 1)] 
-                if key == "NAME": problem_name_from_file = value
-                elif key == "DIMENSION": dimension = int(value)
-                elif key == "EDGE_WEIGHT_TYPE": edge_weight_type = value
-                elif key == "EDGE_WEIGHT_FORMAT": edge_weight_format = value
-                continue
-            
-            if line.startswith("NODE_COORD_SECTION"):
-                reading_coords = True
-                continue
-            if line.startswith("EDGE_WEIGHT_SECTION"):
-                reading_matrix = True
-                continue
-            elif line.startswith("EOF"):
+            if 'EOF' in line:
                 break
-                
-            if reading_coords:
-                parts = line.split()
-                if len(parts) >= 3:
-                    try:
-                        coords.append([float(parts[1]), float(parts[2])])
-                    except ValueError:
-                        print(f"Cảnh báo: Bỏ qua dòng tọa độ: {line}")
-                        
-            if reading_matrix:
-                matrix_lines.append(line)
+            
+            # 1. Đọc Metadata (trước khi vào data section)
+            if ':' in line and current_section is None:
+                key, value = [s.strip() for s in line.split(':', 1)]
+                metadata[key] = value
+                continue
 
-    # 3. Tạo Ma trận
-    dist_matrix = None
-    coords_np = None
+            # 2. Xác định Data Section
+            if line in ['NODE_COORD_SECTION', 'EDGE_WEIGHT_SECTION', 'DISPLAY_DATA_SECTION']:
+                current_section = line
+                continue # Bỏ qua chính dòng tiêu đề
+            
+            # 3. Đọc Data
+            if current_section:
+                data_lines.append(line)
 
-    if edge_weight_type == "EUC_2D":
-        if not coords or len(coords) != dimension:
-            raise ValueError(f"Lỗi EUC_2D: Kích thước {dimension} không khớp {len(coords)} tọa độ.")
-        coords_np = np.array(coords)
-        # GỌI HÀM TÍNH KHOẢNG CÁCH ĐÚNG (TỪ UTILS/DISTANCE.PY)
-        dist_matrix = calculate_distance_matrix(coords_np)
+    # Lấy metadata quan trọng
+    try:
+        dimension = int(metadata.get('DIMENSION'))
+        edge_weight_type = metadata.get('EDGE_WEIGHT_TYPE')
+    except Exception as e:
+        raise ValueError(f"Lỗi khi đọc metadata (DIMENSION, EDGE_WEIGHT_TYPE) từ {problem_name}: {e}")
+
+    # Xử lý dữ liệu dựa trên loại
+    matrix = None
+    if edge_weight_type == 'EUC_2D':
+        matrix = _parse_coord_data(data_lines, dimension)
         
-    elif edge_weight_type == "EXPLICIT":
+    elif edge_weight_type == 'EXPLICIT':
+        edge_weight_format = metadata.get('EDGE_WEIGHT_FORMAT')
         if not edge_weight_format:
             raise ValueError("Lỗi EXPLICIT: Thiếu EDGE_WEIGHT_FORMAT.")
-        dist_matrix = _parse_explicit_matrix(matrix_lines, dimension, edge_weight_format)
+        matrix = _parse_explicit_matrix(data_lines, dimension, edge_weight_format)
+    
+    elif edge_weight_type == 'ATT':
+        # ATT (pseudo-Euclidean) là một trường hợp đặc biệt, phức tạp hơn
+        # Tạm thời, chúng ta sẽ coi nó giống EUC_2D nhưng dùng hàm tính khoảng cách khác
+        print(f"Cảnh báo: Loại 'ATT' được xử lý như 'EUC_2D'. Cần kiểm tra lại công thức tính khoảng cách nếu kết quả sai.")
+        matrix = _parse_coord_data(data_lines, dimension)
         
     else:
         raise NotImplementedError(f"EDGE_WEIGHT_TYPE '{edge_weight_type}' chưa được hỗ trợ.")
 
-    # 4. TẢI GIẢI PHÁP TỐI ƯU (CỰC KỲ QUAN TRỌNG)
-    opt_tour = _load_optimum_solution(problem_name, data_dir)
-    
+    if matrix is None:
+        raise ValueError(f"Không thể phân tích ma trận cho {problem_name}.")
+
     return {
-        "name": problem_name_from_file,
-        "dimension": dimension,
-        "coords": coords_np, # Sẽ là None nếu là EXPLICIT
-        "matrix": dist_matrix,
-        "optimum_tour": opt_tour # <-- Trả về tour tối ưu
+        'name': problem_name.replace('.tsp', ''),
+        'dimension': dimension,
+        'type': edge_weight_type,
+        'matrix': matrix
     }
+
+def get_optimum_tour(problem_name, data_dir):
+    """
+    Tải file .opt.tour (nếu có) từ /data/optimum_solutions/
+    Trả về một tour (list các chỉ số) đã được chuẩn hóa (0-indexed).
+    """
+    if problem_name.endswith('.tsp'):
+        problem_name = problem_name.replace('.tsp', '')
+        
+    file_path = os.path.join(data_dir, 'optimum_solutions', f"{problem_name}.opt.tour")
+    
+    if not os.path.exists(file_path):
+        # print(f"Lưu ý: Không tìm thấy file optimum tour cho {problem_name}.")
+        return None
+
+    tour = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line == 'TOUR_SECTION':
+                continue
+            if line == '-1' or line == 'EOF':
+                break
+            if line.isdigit():
+                # TSPLIB dùng 1-indexed, chúng ta chuyển về 0-indexed
+                tour.append(int(line) - 1)
+                
+    if not tour:
+        return None
+        
+    # Đảm bảo tour bắt đầu từ 0
+    if 0 in tour:
+        start_index = tour.index(0)
+        tour = tour[start_index:] + tour[:start_index]
+        
+    return tour
