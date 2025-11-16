@@ -77,7 +77,8 @@ def load_problem(problem_name: str, data_dir: str = "data") -> dict:
                         dimension = int(value)
                     except ValueError:
                         raise ValueError(f"Giá trị DIMENSION không hợp lệ: {value}")
-                continue 
+                # Sau khi xử lý dòng metadata, chuyển sang dòng tiếp theo
+                continue
             
             if line.startswith("NODE_COORD_SECTION"):
                 reading_coords = True
