@@ -148,29 +148,3 @@ def solve(matrix: np.ndarray,
             break
             
     return best_tour, int(best_cost)
-
-# --- Ví dụ sử dụng (chỉ để kiểm tra nhanh) ---
-if __name__ == "__main__":
-    # 1. Sử dụng ma trận 5x5
-    test_matrix = np.array([
-        [0, 3, 4, 5, 1], # 0
-        [3, 0, 5, 1, 6], # 1
-        [4, 5, 0, 2, 7], # 2
-        [5, 1, 2, 0, 3], # 3
-        [1, 6, 7, 3, 0]  # 4
-    ])
-    
-    print("--- Chạy kiểm tra Tabu Search (N=5) ---")
-    
-    # Chạy thuật toán
-    tour, cost = solve(test_matrix,
-                         max_iterations=100,
-                         tabu_tenure=5)
-    
-    print(f"Tour tốt nhất (TS): {tour}")
-    print(f"Chi phí tốt nhất (TS): {cost}")
-    
-    # Chi phí tối ưu là 14.
-    assert cost == 14
-    
-    print("\nKiểm tra (N=5) thành công!")

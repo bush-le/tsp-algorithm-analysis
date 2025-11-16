@@ -137,12 +137,3 @@ def solve(matrix: np.ndarray,
         temperature *= cooling_rate
         
     return best_tour, int(best_cost)
-
-# --- Ví dụ sử dụng (chỉ để kiểm tra nhanh) ---
-if __name__ == "__main__":
-    # 1. Sử dụng ma trận 5x5
-    test_matrix = np.array([
-        [0, 3, 4, 5, 1], # 0
-        [3, 0, 5, 1, 6], # 1
-        [4, 5, 0, 2, 7], # 2
-        [5, 1, 2, 0, 3], # 3

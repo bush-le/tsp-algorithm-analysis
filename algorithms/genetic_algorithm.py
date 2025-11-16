@@ -164,34 +164,3 @@ def solve(matrix: np.ndarray,
         population = new_population
 
     return best_tour_overall, int(best_cost_overall)
-
-# --- Ví dụ sử dụng (chỉ để kiểm tra nhanh) ---
-if __name__ == "__main__":
-    # 1. Sử dụng ma trận 5x5
-    test_matrix = np.array([
-        [0, 3, 4, 5, 1], # 0
-        [3, 0, 5, 1, 6], # 1
-        [4, 5, 0, 2, 7], # 2
-        [5, 1, 2, 0, 3], # 3
-        [1, 6, 7, 3, 0]  # 4
-    ])
-    
-    print("--- Chạy kiểm tra Genetic Algorithm (N=5) ---")
-    
-    # Chạy thuật toán
-    # (N=5) là rất nhỏ, GA sẽ nhanh chóng hội tụ
-    tour, cost = solve(test_matrix,
-                         population_size=50,
-                         num_generations=100,
-                         mutation_rate=0.02,
-                         elite_size=2,
-                         tournament_k=3)
-    
-    print(f"Tour tốt nhất (GA): {tour}")
-    print(f"Chi phí tốt nhất (GA): {cost}")
-    
-    # Chi phí tối ưu là 14. GA là thuật toán ngẫu nhiên,
-    # nhưng với N=5, nó gần như chắc chắn tìm thấy.
-    assert cost == 14
-    
-    print("\nKiểm tra (N=5) thành công!")

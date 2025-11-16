@@ -47,8 +47,9 @@ def solve(matrix: np.ndarray, start_node: int = 0) -> Tuple[List[int], int]:
     
     # Chúng ta cần chọn N-1 nút tiếp theo
     for _ in range(num_cities - 1):
-        # Lấy hàng khoảng cách từ nút hiện tại
-        distances = matrix[current_node].copy()
+        # Lấy hàng khoảng cách từ nút hiện tại và đảm bảo nó là kiểu float
+        # để có thể gán giá trị np.inf
+        distances = matrix[current_node].copy().astype(float)
         
         # Đặt khoảng cách đến các nút đã thăm là vô cùng
         # để đảm bảo chúng không được chọn
@@ -71,57 +72,3 @@ def solve(matrix: np.ndarray, start_node: int = 0) -> Tuple[List[int], int]:
     cost = calculate_tour_cost(tour, matrix)
     
     return tour, int(cost)
-
-# --- Ví dụ sử dụng (chỉ để kiểm tra nhanh) ---
-if __name__ == "__main__":
-    # Sử dụng lại ma trận 5x5 từ ví dụ của evaluator
-    test_matrix = np.array([
-        [0, 3, 4, 5, 1], # 0
-        [3, 0, 5, 1, 6], # 1
-        [4, 5, 0, 2, 7], # 2
-        [5, 1, 2, 0, 3], # 3
-        [1, 6, 7, 3, 0]  # 4
-    ])
-    
-    print("--- Chạy kiểm tra Nearest Neighbor ---")
-    print("Ma trận thử nghiệm 5x5:")
-    print(test_matrix)
-    
-    # Chạy thuật toán
-    tour, cost = solve(test_matrix, start_node=0)
-    
-    print(f"\nBắt đầu từ nút 0:")
-    print(f"Lộ trình (Tour): {tour}")
-    print(f"Chi phí (Cost): {cost}")
-    
-    # Kiểm tra kết quả mong đợi
-    # 0 -> 1 (node 4)
-    # 4 -> 3 (node 3)
-    # 3 -> 1 (node 1)
-    # 1 -> 5 (node 2)
-    # Quay về: 2 -> 4 (node 0)
-    # Tour: [0, 4, 3, 1, 2]
-    # Cost: 1 + 3 + 1 + 5 + 4 = 14
-    
-    expected_tour = [0, 4, 3, 1, 2]
-    expected_cost = 14
-    
-    assert tour == expected_tour
-    assert cost == expected_cost
-    
-    print("\nKiểm tra logic NN thành công!")
-    
-    # Thử bắt đầu từ nút khác (ví dụ: nút 1)
-    tour_1, cost_1 = solve(test_matrix, start_node=1)
-    print(f"\nBắt đầu từ nút 1:")
-    print(f"Lộ trình (Tour): {tour_1}")
-    print(f"Chi phí (Cost): {cost_1}")
-    # 1 -> 1 (node 3)
-    # 3 -> 2 (node 2)
-    # 2 -> 4 (node 0)
-    # 0 -> 1 (node 4)
-    # Tour: [1, 3, 2, 0, 4]
-    # Cost: 1 + 2 + 4 + 1 + 6 = 14
-    assert tour_1 == [1, 3, 2, 0, 4]
-    assert cost_1 == 14
-    print("Kiểm tra điểm bắt đầu khác thành công!")

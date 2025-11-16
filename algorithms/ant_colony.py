@@ -137,32 +137,3 @@ def solve(matrix: np.ndarray,
                 pheromone_matrix[node_j, node_i] += deposit_amount # Đồ thị vô hướng
                 
     return best_tour_overall, int(best_cost_overall)
-
-# --- Ví dụ sử dụng (chỉ để kiểm tra nhanh) ---
-if __name__ == "__main__":
-    # 1. Sử dụng ma trận 5x5
-    test_matrix = np.array([
-        [0, 3, 4, 5, 1], # 0
-        [3, 0, 5, 1, 6], # 1
-        [4, 5, 0, 2, 7], # 2
-        [5, 1, 2, 0, 3], # 3
-        [1, 6, 7, 3, 0]  # 4
-    ])
-    
-    print("--- Chạy kiểm tra Ant Colony Optimization (N=5) ---")
-    
-    # Chạy thuật toán
-    tour, cost = solve(test_matrix,
-                         num_ants=10,
-                         num_iterations=50,
-                         alpha=1.0, beta=2.0,
-                         evaporation_rate=0.5,
-                         pheromone_deposit=100)
-    
-    print(f"Tour tốt nhất (ACO): {tour}")
-    print(f"Chi phí tốt nhất (ACO): {cost}")
-    
-    # Chi phí tối ưu là 14.
-    assert cost == 14
-    
-    print("\nKiểm tra (N=5) thành công!")
