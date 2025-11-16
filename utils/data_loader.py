@@ -5,7 +5,7 @@ import math
 from . import evaluator # Chúng ta cần evaluator để tính opt_cost
 
 # --- PHẦN 1: CÁC HÀM TÍNH TOÁN KHOẢNG CÁCH ---
-# (Các hàm này đã được tối ưu hóa)
+# (Phần này của bạn đã chính xác, giữ nguyên)
 
 def _calculate_euc_2d_matrix(coords):
     """
@@ -75,6 +75,7 @@ def _calculate_att_matrix(coords):
     return matrix
 
 # --- PHẦN 2: CÁC HÀM PHÂN TÍCH (PARSING) ---
+# (Phần này của bạn đã chính xác, giữ nguyên)
 
 def _parse_coords_from_lines(coord_lines, dimension):
     """
@@ -154,6 +155,7 @@ def _parse_explicit_matrix(matrix_lines, dimension, edge_weight_format):
     return matrix
 
 # --- PHẦN 3: HÀM GIAO DIỆN CHÍNH (PUBLIC) ---
+# (Hàm load_tsp_problem của bạn đã chính xác, giữ nguyên)
 
 def load_tsp_problem(problem_name, data_dir):
     """
@@ -243,10 +245,13 @@ def load_tsp_problem(problem_name, data_dir):
     # Trả về theo giao diện chuẩn (coords, matrix)
     return coords, dist_matrix
 
+# --- PHẦN 4: HÀM TẢI OPTIMUM (ĐÃ SỬA LỖI) ---
+# *** ĐÂY LÀ PHẦN ĐƯỢC THAY THẾ ***
+
 def load_optimum_solution(problem_name, data_dir, dist_matrix):
     """
     Tải file .opt.tour VÀ tính chi phí tối ưu.
-    Đây là hàm quan trọng để giải quyết lỗi opt_cost = 0.
+    *** ĐÃ NÂNG CẤP ĐỂ ĐỌC ĐỊNH DẠNG TOUR_SECTION DẠNG KHỐI (BLOCK) ***
     """
     if problem_name.endswith('.tsp'):
         problem_name = problem_name.replace('.tsp', '')
@@ -257,25 +262,46 @@ def load_optimum_solution(problem_name, data_dir, dist_matrix):
         return None, 0 # Không có tour tối ưu
 
     tour = []
+    in_tour_section = False # Cờ để biết khi nào bắt đầu đọc
+    
     with open(file_path, 'r') as f:
         for line in f:
             line = line.strip()
-            if line == 'TOUR_SECTION': continue
-            if line == '-1' or line == 'EOF': break
-            if line.isdigit():
-                tour.append(int(line) - 1) # 1-indexed -> 0-indexed
-                
+            
+            if line == 'TOUR_SECTION':
+                in_tour_section = True
+                continue
+            
+            if line == '-1' or line == 'EOF': 
+                break # Dừng khi gặp -1 hoặc EOF
+
+            if in_tour_section and line: # Chỉ xử lý nếu đang trong section và dòng không rỗng
+                # --- ĐÂY LÀ PHẦN SỬA LỖI QUAN TRỌNG ---
+                # Tách dòng thành các phần (ví dụ: "29 7 28...")
+                parts = line.split() 
+                for part in parts:
+                    if part.isdigit():
+                        tour.append(int(part) - 1) # 1-indexed -> 0-indexed
+                # --- KẾT THÚC SỬA LỖI ---
+                    
     if not tour:
+        print(f"LỖI: {problem_name}.opt.tour được tìm thấy nhưng không thể đọc tour.")
         return None, 0
-        
+    
+    # Kiểm tra xem có đọc đủ thành phố không
+    if len(tour) != len(dist_matrix):
+        print(f"CẢNH BÁO: Đọc {len(tour)} thành phố từ .opt.tour, nhưng bài toán có {len(dist_matrix)} thành phố.")
+        # Có thể file tour bị lỗi, nhưng chúng ta vẫn thử tính
+    
     # Chuẩn hóa tour (bắt đầu từ 0)
     if 0 in tour:
         start_index = tour.index(0)
         tour = tour[start_index:] + tour[:start_index]
+    else:
+        print(f"Cảnh báo: Tour của {problem_name} không chứa nút 0. Sử dụng tour gốc.")
+
     
-    # *** ĐÂY LÀ PHẦN SỬA LỖI QUAN TRỌNG ***
-    # Tính toán chi phí bằng cách gọi hàm evaluator
-    # (Đảm bảo 'from . import evaluator' ở đầu file)
+    # Tính toán chi phí
     try:
         opt_cost = evaluator.calculate_tour_cost(tour, dist_matrix)
     except Exception as e:
