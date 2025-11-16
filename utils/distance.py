@@ -1,44 +1,33 @@
 import numpy as np
 
-def calculate_distance_matrix(coords: np.ndarray) -> np.ndarray:
+def calculate_distance_matrix(coords: np.ndarray, edge_weight_type: str = "EUC_2D") -> np.ndarray:
     """
-    Tính toán ma trận khoảng cách Euclidean từ một mảng tọa độ (N, 2).
-
-    Sử dụng phép toán broadcasting của NumPy để tính toán vector hóa
-    khoảng cách giữa tất cả các cặp điểm một cách hiệu quả.
-
-    Khoảng cách được làm tròn theo tiêu chuẩn EUC_2D của TSPLIB.
-
-    Args:
-        coords (np.ndarray): Một mảng NumPy có hình dạng (N, 2),
-                             trong đó N là số lượng thành phố và
-                             mỗi hàng chứa tọa độ [x, y].
-
-    Returns:
-        np.ndarray: Một ma trận khoảng cách (N, N) đối xứng,
-                    với các giá trị được làm tròn thành số nguyên.
+    Tính toán ma trận khoảng cách từ tọa độ (N, 2)
+    dựa trên 'edge_weight_type' được chỉ định.
+    
+    Hỗ trợ: 'EUC_2D' và 'ATT'.
     """
     if not isinstance(coords, np.ndarray):
         coords = np.array(coords)
 
-    # coords (N, 2)
-    # coords[:, np.newaxis, :] -> (N, 1, 2)
-    # coords[np.newaxis, :, :] -> (1, N, 2)
-    
-    # Tính toán chênh lệch (diff) giữa mọi cặp điểm
-    # Kết quả là một mảng (N, N, 2)
+    # Tính bình phương khoảng cách (vector hóa)
+    # (N, 1, 2) - (1, N, 2) -> (N, N, 2)
     diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
-    
-    # Tính bình phương khoảng cách (d^2)
-    # np.sum(..., axis=-1) cộng các bình phương của dx và dy
-    # Kết quả là một mảng (N, N)
+    # (N, N)
     dist_sq = np.sum(diff**2, axis=-1)
     
-    # Tính khoảng cách Euclidean (d)
-    distances = np.sqrt(dist_sq)
-    
-    # Làm tròn theo tiêu chuẩn TSPLIB (EUC_2D)
-    # np.round() làm tròn đến số nguyên gần nhất
-    matrix = np.round(distances)
-    
+    if edge_weight_type == "EUC_2D":
+        # Chuẩn EUC_2D: làm tròn số thực (float)
+        distances = np.sqrt(dist_sq)
+        matrix = np.round(distances)
+        
+    elif edge_weight_type == "ATT":
+        # Chuẩn ATT: d = ceil(sqrt((x^2 + y^2) / 10.0))
+        # np.ceil() là hàm "làm tròn lên" (ceiling)
+        distances = np.sqrt(dist_sq / 10.0)
+        matrix = np.ceil(distances)
+        
+    else:
+        raise NotImplementedError(f"Kiểu trọng số '{edge_weight_type}' không được hỗ trợ để tính toán từ tọa độ.")
+
     return matrix.astype(int)
