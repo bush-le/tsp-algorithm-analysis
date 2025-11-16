@@ -42,30 +42,3 @@ def calculate_distance_matrix(coords: np.ndarray) -> np.ndarray:
     matrix = np.round(distances)
     
     return matrix.astype(int)
-
-# --- Ví dụ sử dụng (chỉ để kiểm tra nhanh) ---
-if __name__ == "__main__":
-    # Đây là 3 điểm của một tam giác vuông 3-4-5
-    test_coords = np.array([
-        [0, 0],  # Điểm 0
-        [3, 0],  # Điểm 1
-        [0, 4]   # Điểm 2
-    ])
-    
-    dist_matrix = calculate_distance_matrix(test_coords)
-    
-    print("Tọa độ các điểm:")
-    print(test_coords)
-    print("\nMa trận khoảng cách (đã làm tròn):")
-    print(dist_matrix)
-    
-    # Kết quả mong đợi:
-    # [[0, 3, 4],
-    #  [3, 0, 5],
-    #  [4, 5, 0]]
-    
-    assert dist_matrix[0, 1] == 3
-    assert dist_matrix[0, 2] == 4
-    assert dist_matrix[1, 2] == 5
-    assert dist_matrix[1, 0] == 3
-    print("\nKiểm tra thành công!")
