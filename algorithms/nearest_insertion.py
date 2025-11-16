@@ -77,7 +77,8 @@ def solve(matrix: np.ndarray, start_node: int = 0) -> Tuple[List[int], int]:
         # Tìm nút gần 'start_node' nhất
         second_node_dists = matrix[start_node, unvisited]
         # Đặt khoảng cách đến các nút đã thăm (chỉ 'start_node') là vô cùng
-        distances_from_start = matrix[start_node].copy()
+        # Chuyển sang float để có thể gán np.inf
+        distances_from_start = matrix[start_node].copy().astype(float)
         distances_from_start[~unvisited] = np.inf
         
         second_node = np.argmin(distances_from_start)
