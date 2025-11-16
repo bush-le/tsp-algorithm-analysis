@@ -7,23 +7,16 @@ def save_tsp_file(problem_name: str,
                   data_dir: str = "data"):
     """
     Lưu một tập hợp tọa độ thành một file .tsp đơn giản.
-
-    File này sẽ chứa siêu dữ liệu cơ bản và phần NODE_COORD_SECTION
-    để tương thích với data_loader.py của chúng ta.
-
-    Args:
-        problem_name (str): Tên của vấn đề (ví dụ: 'test_10').
-        coords (np.ndarray): Mảng (N, 2) của tọa độ [x, y].
-        data_dir (str): Thư mục gốc chứa '/tsplib/'.
+    
+    LƯU Ý: Lưu vào thư mục /data/generated/
     """
     num_cities = coords.shape[0]
     
-    # Đảm bảo thư mục /data/tsplib/ tồn tại
-    tsp_dir = os.path.join(data_dir, "tsplib")
-    if not os.path.exists(tsp_dir):
-        os.makedirs(tsp_dir)
+    gen_dir = os.path.join(data_dir, "generated") 
+    if not os.path.exists(gen_dir):
+        os.makedirs(gen_dir)
         
-    file_path = os.path.join(tsp_dir, f"{problem_name}.tsp")
+    file_path = os.path.join(gen_dir, f"{problem_name}.tsp")
     
     try:
         with open(file_path, 'w') as f:
@@ -34,9 +27,7 @@ def save_tsp_file(problem_name: str,
             f.write(f"EDGE_WEIGHT_TYPE: EUC_2D\n")
             f.write(f"NODE_COORD_SECTION\n")
             
-            # Ghi tọa độ (định dạng 1-indexed)
             for i in range(num_cities):
-                # Định dạng: "ID X Y"
                 f.write(f" {i+1} {coords[i, 0]:.4f} {coords[i, 1]:.4f}\n")
                 
             f.write("EOF\n")
@@ -53,24 +44,10 @@ def generate_problem(problem_name: str,
                      data_dir: str = "data") -> np.ndarray:
     """
     Tạo ra một vấn đề TSP mới với các tọa độ ngẫu nhiên.
-
-    Args:
-        problem_name (str): Tên để lưu file (ví dụ: 'test_10').
-        num_cities (int): Số lượng thành phố (N).
-        max_coord (int): Tọa độ tối đa (ví dụ: 1000 -> 0-999).
-        save_to_file (bool): Nếu True, lưu file .tsp.
-        data_dir (str): Thư mục data gốc.
-
-    Returns:
-        np.ndarray: Mảng (N, 2) của các tọa độ đã tạo.
     """
-    # Tạo N cặp tọa độ (x, y) ngẫu nhiên, làm tròn thành số nguyên
     coords = np.random.randint(0, max_coord, size=(num_cities, 2))
-    
-    # Đảm bảo không có tọa độ trùng lặp (hiếm nhưng có thể xảy ra)
     unique_coords = np.unique(coords, axis=0)
     
-    # Nếu có trùng lặp, tạo thêm cho đến khi đủ N
     while unique_coords.shape[0] < num_cities:
         needed = num_cities - unique_coords.shape[0]
         new_coords = np.random.randint(0, max_coord, size=(needed, 2))
