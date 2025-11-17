@@ -1,125 +1,178 @@
 import numpy as np
 import sys
 import os
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 # --- Import
-# Xử lý sys.path để import từ thư mục 'utils'
 try:
     from ..utils.evaluator import calculate_tour_cost
+    # Giả định two_opt_improve được import từ module two_opt riêng
 except ImportError:
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from utils.evaluator import calculate_tour_cost
-
-def _find_best_insertion(tour: List[int], node_k: int, matrix: np.ndarray) -> int:
-    """
-    Tìm vị trí chèn tốt nhất (ít tăng chi phí nhất) cho 'node_k' vào 'tour'.
-
-    Args:
-        tour (List[int]): Lộ trình hiện tại.
-        node_k (int): Nút mới cần chèn.
-        matrix (np.ndarray): Ma trận khoảng cách.
-
-    Returns:
-        int: Chỉ số (index) trong 'tour' nơi 'node_k' nên được chèn vào *sau* nó.
-             (Ví dụ: return 0 nghĩa là chèn vào sau tour[0])
-    """
-    min_cost_increase = np.inf
-    best_index = 0
+    # Cần thêm import two_opt nếu nó được dùng
+    # Ví dụ: from algorithms.two_opt import solve as two_opt_solve 
     
-    # Lặp qua tất cả các cạnh (i, j) trong lộ trình hiện tại
-    # Nếu tour = [0, 2, 4], các cạnh là (0, 2), (2, 4), và (4, 0)
-    for i in range(len(tour)):
-        node_i = tour[i]
-        # Nút tiếp theo, xử lý vòng lặp
-        node_j = tour[(i + 1) % len(tour)] 
-        
-        # Chi phí chèn: (i -> k) + (k -> j) - (i -> j)
-        cost_increase = matrix[node_i, node_k] + matrix[node_k, node_j] - matrix[node_i, node_j]
-        
-        if cost_increase < min_cost_increase:
-            min_cost_increase = cost_increase
-            best_index = i # Chèn *sau* nút i
-            
-    return best_index
+# GHI CHÚ: Tôi sẽ giữ lại định nghĩa _two_opt_improve ở đây để code độc lập.
+# Trong thực tế, bạn chỉ nên định nghĩa nó MỘT LẦN.
 
-def solve(matrix: np.ndarray, start_node: int = 0) -> Tuple[List[int], int]:
+
+def _two_opt_improve(tour: List[int], matrix: np.ndarray, max_iter: int = 100) -> List[int]:
     """
-    Giải TSP bằng thuật toán Chèn Gần nhất (Nearest Insertion).
+    Cải thiện tour bằng 2-opt local search (đã dọn dẹp).
+    """
+    improved = tour.copy()
+    changed = True
+    iteration = 0
+    
+    # Tính toán total cost ban đầu (chỉ cần thiết cho vòng lặp, nhưng chúng ta dùng delta)
+    n = len(tour)
 
-    Tuân thủ "Interface" chuẩn: trả về (tour, cost).
+    while changed and iteration < max_iter:
+        changed = False
+        iteration += 1
+        
+        # Chỉ lặp đến len(tour) - 1 để tránh lỗi index j+1
+        for i in range(len(tour) - 1):
+            for j in range(i + 2, len(tour)):
+                
+                # Cạnh cũ: (i, i+1) và (j, j+1)
+                old_cost = (matrix[improved[i], improved[i+1]] + 
+                            matrix[improved[j], improved[(j+1) % n]])
+                
+                # Cạnh mới: (i, j) và (i+1, j+1)
+                new_cost = (matrix[improved[i], improved[j]] + 
+                            matrix[improved[i+1], improved[(j+1) % n]])
+                
+                if new_cost < old_cost:
+                    # Reverse segment [i+1:j+1]
+                    improved[i+1:j+1] = list(reversed(improved[i+1:j+1]))
+                    changed = True
+                    break # First Improve
+            
+            if changed:
+                break
+        
+    return improved
 
-    Args:
-        matrix (np.ndarray): Ma trận khoảng cách (N x N).
-        start_node (int): Nút bắt đầu (0-indexed).
 
-    Returns:
-        Tuple[List[int], int]:
-            - tour (List[int]): Danh sách các ID nút (0-indexed).
-            - cost (int): Tổng chi phí của lộ trình.
+def _find_best_insertion_optimized(tour: List[int], node: int, matrix: np.ndarray) -> int:
+    """
+    Tìm vị trí chèn tốt nhất (delta cost) cho node vào tour.
+    """
+    min_increase = np.inf
+    best_pos = 0
+    tour_len = len(tour)
+    
+    for i in range(tour_len):
+        current_i = tour[i]
+        current_j = tour[(i + 1) % tour_len]
+        
+        # Cost increase = (i->node) + (node->j) - (i->j)
+        increase = (matrix[current_i, node] + 
+                    matrix[node, current_j] - 
+                    matrix[current_i, current_j])
+        
+        if increase < min_increase:
+            min_increase = increase
+            best_pos = i
+            
+    return best_pos
+
+def _find_nearest_unvisited(tour: List[int], 
+                            unvisited: set, 
+                            matrix: np.ndarray) -> int:
+    """
+    Tìm node chưa thăm gần nhất với bất kỳ node nào trong tour.
+    """
+    min_dist = np.inf
+    nearest_node = None
+    
+    # --- ĐÃ SỬA LỖI LOGIC TÌM KIẾM ---
+    for node in unvisited:
+        # Tìm khoảng cách nhỏ nhất từ node hiện tại đến BẤT KỲ nút nào trong tour
+        # Chỉ cần min distance, không cần min edge.
+        dist_to_tour = min(matrix[node, tour_node] for tour_node in tour)
+        
+        if dist_to_tour < min_dist:
+            min_dist = dist_to_tour
+            nearest_node = node
+            
+    return nearest_node
+
+
+def solve(matrix: np.ndarray, 
+          start_node: int = 0,
+          use_2opt: bool = False) -> Tuple[List[int], int]:
+    """
+    Giải TSP bằng Nearest Insertion.
     """
     num_cities = matrix.shape[0]
-    if num_cities < 2:
-        return list(range(num_cities)), 0
-        
-    # 1. Bắt đầu lộ trình với 'start_node'
+    
+    # Edge cases
+    if num_cities <= 2:
+         tour = list(range(num_cities))
+         cost = calculate_tour_cost(tour, matrix)
+         return tour, int(cost)
+    
+    # 1. Khởi tạo tour với start_node
     tour = [start_node]
-    unvisited = np.ones(num_cities, dtype=bool)
-    unvisited[start_node] = False
+    unvisited = set(range(num_cities))
+    unvisited.remove(start_node)
     
-    # Tạo danh sách các ID nút chưa thăm
-    unvisited_nodes = np.where(unvisited)[0].tolist()
+    # 2. Thêm node thứ 2 (nearest to start_node)
+    second_node = min(unvisited, key=lambda x: matrix[start_node, x])
+    tour.append(second_node)
+    unvisited.remove(second_node)
     
-    # 2. Xử lý trường hợp đặc biệt: thêm nút thứ 2 (gần nhất với điểm bắt đầu)
-    if unvisited_nodes:
-        # Tìm nút gần 'start_node' nhất
-        second_node_dists = matrix[start_node, unvisited]
-        # Đặt khoảng cách đến các nút đã thăm (chỉ 'start_node') là vô cùng
-        # Chuyển sang float để có thể gán np.inf
-        distances_from_start = matrix[start_node].copy().astype(float)
-        distances_from_start[~unvisited] = np.inf
+    # 3. Main loop
+    while unvisited:
+        nearest_node = _find_nearest_unvisited(tour, unvisited, matrix)
         
-        second_node = np.argmin(distances_from_start)
+        # 3b. Tìm vị trí chèn tốt nhất
+        best_pos = _find_best_insertion_optimized(tour, nearest_node, matrix)
         
-        tour.append(second_node)
-        unvisited[second_node] = False
-        unvisited_nodes.remove(second_node)
+        # 3c. Chèn node
+        tour.insert(best_pos + 1, nearest_node)
         
-    # 3. Lặp lại cho đến khi tất cả các nút được chèn
-    while unvisited_nodes:
-        # Bước "Nearest": Tìm nút 'k' chưa thăm gần nhất với *bất kỳ* nút nào
-        # trong lộ trình hiện tại.
+        # 3d. Update unvisited
+        unvisited.remove(nearest_node)
         
-        # Lấy ma trận con của khoảng cách từ các nút CHƯA THĂM
-        # đến các nút ĐÃ CÓ TRONG LỘ TRÌNH
-        # Hàng: unvisited_nodes, Cột: tour
-        sub_matrix = matrix[np.ix_(unvisited_nodes, tour)]
+    # 4. Optional: 2-opt improvement
+    if use_2opt:
+        tour = _two_opt_improve(tour, matrix)
         
-        # Tìm giá trị nhỏ nhất trong ma trận con này
-        min_dist = np.min(sub_matrix)
-        
-        # Tìm chỉ số (hàng, cột) của giá trị nhỏ nhất đó
-        # (row_idx, col_idx) tương ứng với chỉ số trong sub_matrix
-        min_indices = np.where(sub_matrix == min_dist)
-        # Lấy cặp đầu tiên tìm thấy
-        row_idx, col_idx = min_indices[0][0], min_indices[1][0]
-        
-        # Lấy ID nút thực tế
-        node_k = unvisited_nodes[row_idx] # Nút 'k' (gần nhất)
-        
-        # Bước "Insertion": Tìm vị trí chèn tốt nhất cho 'node_k'
-        best_index = _find_best_insertion(tour, node_k, matrix)
-        
-        # Chèn 'node_k' vào sau 'best_index'
-        tour.insert(best_index + 1, node_k)
-        
-        # Cập nhật danh sách chưa thăm
-        unvisited[node_k] = False
-        unvisited_nodes.remove(node_k)
-
-    # Tính chi phí cuối cùng
+    # 5. Tính cost
     cost = calculate_tour_cost(tour, matrix)
     
     return tour, int(cost)
+
+
+def solve_multi_start(matrix: np.ndarray, 
+                      num_starts: int = 5,
+                      use_2opt: bool = False) -> Tuple[List[int], int]:
+    """
+    Chạy Nearest Insertion từ nhiều start nodes, chọn best.
+    """
+    num_cities = matrix.shape[0]
+    
+    if num_cities <= 2:
+        return solve(matrix, 0, use_2opt)
+    
+    # Chọn start nodes đều nhau
+    start_nodes = np.linspace(0, num_cities - 1, num_starts, dtype=int)
+    
+    best_tour = None
+    best_cost = np.inf
+    
+    for start in start_nodes:
+        # Gọi hàm solve NI cơ bản
+        tour, cost = solve(matrix, start_node=start, use_2opt=use_2opt)
+        
+        if cost < best_cost:
+            best_cost = cost
+            best_tour = tour
+            
+    return best_tour, int(best_cost)
