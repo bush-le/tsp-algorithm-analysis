@@ -2,10 +2,9 @@ import numpy as np
 import random
 import sys
 import os
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 
 # --- Import
-# Xử lý sys.path để import từ thư mục 'utils'
 try:
     from ..utils.evaluator import calculate_tour_cost
 except ImportError:
@@ -14,153 +13,232 @@ except ImportError:
         sys.path.append(project_root)
     from utils.evaluator import calculate_tour_cost
 
-# --- Các hàm thành phần của Thuật toán Di truyền ---
+# --- Các hàm thành phần ---
 
 def _calculate_fitness(cost: float) -> float:
     """Tính độ thích nghi: chi phí càng thấp, thích nghi càng cao."""
-    # Thêm 1e-6 để tránh chia cho 0
     return 1.0 / (cost + 1e-6)
 
 def _tournament_selection(population: List[List[int]], 
                           fitnesses: List[float], 
                           k: int) -> List[int]:
-    """
-    Chọn lọc Giải đấu (Tournament Selection).
-    Chọn k cá thể ngẫu nhiên và trả về cá thể tốt nhất (thích nghi cao nhất).
-    """
-    # Lấy k chỉ số ngẫu nhiên từ quần thể
+    """Chọn lọc Giải đấu (Tournament Selection)."""
     indices = random.sample(range(len(population)), k)
-    
-    best_index = -1
-    best_fitness = -np.inf
-    
-    for idx in indices:
-        if fitnesses[idx] > best_fitness:
-            best_fitness = fitnesses[idx]
-            best_index = idx
-            
-    return population[best_index]
+    best_idx = max(indices, key=lambda i: fitnesses[i])
+    return population[best_idx]
 
-def _ordered_crossover(parent1: List[int], parent2: List[int]) -> List[int]:
+def _order_crossover(parent1: List[int], parent2: List[int]) -> List[int]:
     """
-    Lai ghép có thứ tự (Ordered Crossover - OX1).
-    Tạo ra một 'con' hợp lệ cho TSP.
+    Order Crossover (OX) - Crossover tốt nhất cho TSP.
+    Giữ nguyên thứ tự tương đối từ parent2.
     """
     num_cities = len(parent1)
-    child = [None] * num_cities
     
-    # 1. Chọn 2 điểm cắt ngẫu nhiên
+    # 1. Chọn một đoạn từ parent1
     start, end = sorted(random.sample(range(num_cities), 2))
     
-    # 2. Sao chép đoạn gen (segment) từ parent1 vào con
-    segment = parent1[start : end + 1]
-    child[start : end + 1] = segment
-    segment_set = set(segment)
+    # 2. Copy đoạn đó vào child
+    child = [None] * num_cities
+    child[start:end+1] = parent1[start:end+1]
+    segment_set = set(parent1[start:end+1])
     
-    # 3. Điền các gen còn thiếu từ parent2
-    parent2_ptr = (end + 1) % num_cities
-    child_ptr = (end + 1) % num_cities
+    # 3. Lấy các gene còn lại từ parent2 theo thứ tự
+    remaining_genes = [gene for gene in parent2 if gene not in segment_set]
     
-    # Lặp cho đến khi 'con' được điền đầy
-    while None in child:
-        # Lấy gen từ parent2
-        gene = parent2[parent2_ptr]
-        
-        # Nếu gen đó chưa có trong 'con' (từ segment của parent1)
-        if gene not in segment_set:
-            child[child_ptr] = gene
-            child_ptr = (child_ptr + 1) % num_cities
-            
-        parent2_ptr = (parent2_ptr + 1) % num_cities
-        
+    # 4. Điền vào child (bắt đầu từ vị trí sau segment)
+    remaining_idx = 0
+    for i in range(num_cities):
+        if child[i] is None:
+            child[i] = remaining_genes[remaining_idx]
+            remaining_idx += 1
+    
     return child
 
 def _swap_mutation(tour: List[int]) -> List[int]:
-    """
-    Đột biến Hoán đổi (Swap Mutation).
-    Hoán đổi 2 thành phố ngẫu nhiên trong lộ trình.
-    """
-    num_cities = len(tour)
-    i, j = random.sample(range(num_cities), 2)
+    """Đột biến Hoán đổi: swap 2 thành phố ngẫu nhiên."""
+    mutated = tour.copy()
+    i, j = random.sample(range(len(tour)), 2)
+    mutated[i], mutated[j] = mutated[j], mutated[i]
+    return mutated
+
+def _two_opt_mutation(tour: List[int]) -> List[int]:
+    """Đột biến 2-opt: đảo ngược một đoạn tour."""
+    mutated = tour.copy()
+    i, j = sorted(random.sample(range(len(tour)), 2))
+    mutated[i:j+1] = list(reversed(mutated[i:j+1]))
+    return mutated
+
+def _scramble_mutation(tour: List[int]) -> List[int]:
+    """Đột biến Scramble: xáo trộn một đoạn nhỏ."""
+    mutated = tour.copy()
+    size = len(tour)
+    length = random.randint(2, min(5, size // 3))  # Xáo trộn 2-5 cities
+    start = random.randint(0, size - length)
+    segment = mutated[start:start+length]
+    random.shuffle(segment)
+    mutated[start:start+length] = segment
+    return mutated
+
+def _calculate_diversity(population: List[List[int]]) -> float:
+    """Tính diversity = tỷ lệ tour unique."""
+    unique = len(set(tuple(tour) for tour in population))
+    return unique / len(population)
+
+def _greedy_init(matrix: np.ndarray, start_city: int) -> List[int]:
+    """Tạo tour khởi tạo bằng nearest neighbor."""
+    num_cities = matrix.shape[0]
+    tour = [start_city]
+    unvisited = set(range(num_cities)) - {start_city}
     
-    mutated_tour = tour.copy()
-    mutated_tour[i], mutated_tour[j] = mutated_tour[j], mutated_tour[i]
-    return mutated_tour
+    current = start_city
+    while unvisited:
+        nearest = min(unvisited, key=lambda city: matrix[current][city])
+        tour.append(nearest)
+        unvisited.remove(nearest)
+        current = nearest
+    
+    return tour
 
 # --- Hàm Solve chính ---
 
 def solve(matrix: np.ndarray, 
           population_size: int = 100, 
           num_generations: int = 500, 
-          mutation_rate: float = 0.01,
+          mutation_rate: float = 0.15,
           elite_size: int = 5,
-          tournament_k: int = 5) -> Tuple[List[int], int]:
+          tournament_k: int = 5,
+          use_greedy_init: bool = True,
+          diversity_threshold: float = 0.25) -> Tuple[List[int], int]:
     """
-    Giải TSP bằng Thuật toán Di truyền (Genetic Algorithm).
-
-    Tuân thủ "Interface" chuẩn: trả về (tour, cost).
-
+    Giải TSP bằng Genetic Algorithm với Order Crossover.
+    
+    Improvements:
+    - Order Crossover (OX) thay vì PMX
+    - 3 loại mutation (swap, 2-opt, scramble)
+    - Greedy initialization cho một phần quần thể
+    - Diversity monitoring với restart
+    - Adaptive mutation rate
+    
     Args:
-        matrix (np.ndarray): Ma trận khoảng cách (N x N).
-        population_size (int): Số lượng cá thể (lộ trình) trong mỗi thế hệ.
-        num_generations (int): Số thế hệ để tiến hóa.
-        mutation_rate (float): Xác suất đột biến (ví dụ: 0.01 = 1%).
-        elite_size (int): Số lượng cá thể 'tinh hoa' tốt nhất
-                          được giữ lại ở mỗi thế hệ.
-        tournament_k (int): Kích thước của 'giải đấu' khi chọn lọc.
-
-    Returns:
-        Tuple[List[int], int]:
-            - tour (List[int]): Lộ trình tốt nhất tìm được.
-            - cost (int): Chi phí của lộ trình tốt nhất.
+        matrix: Ma trận khoảng cách
+        population_size: Kích thước quần thể
+        num_generations: Số thế hệ tối đa
+        mutation_rate: Tỷ lệ đột biến (khuyến nghị 0.1-0.2)
+        elite_size: Số cá thể ưu tú giữ lại
+        tournament_k: Kích thước tournament
+        use_greedy_init: Có dùng nearest neighbor cho init không
+        diversity_threshold: Ngưỡng restart khi diversity thấp
     """
     num_cities = matrix.shape[0]
     
-    # 1. Khởi tạo Quần thể
+    # 1. Khởi tạo quần thể
     population = []
-    base_tour = list(range(num_cities))
-    for _ in range(population_size):
-        random.shuffle(base_tour)
-        population.append(base_tour.copy())
-        
+    
+    # 1a. Một phần dùng greedy (nếu enabled)
+    if use_greedy_init:
+        greedy_count = min(10, population_size // 10)
+        for i in range(greedy_count):
+            start = i % num_cities
+            tour = _greedy_init(matrix, start)
+            population.append(tour)
+    
+    # 1b. Phần còn lại random
+    while len(population) < population_size:
+        tour = list(range(num_cities))
+        random.shuffle(tour)
+        population.append(tour)
+    
     best_tour_overall = None
     best_cost_overall = np.inf
-
-    # 2. Vòng lặp Tiến hóa (Generations)
+    no_improve_count = 0
+    
+    # 2. Vòng lặp tiến hóa
     for gen in range(num_generations):
         
-        # 3. Đánh giá (Fitness)
-        costs = [calculate_tour_cost(tour, matrix) for tour in population]
-        fitnesses = [_calculate_fitness(c) for c in costs]
+        # 3. Đánh giá quần thể
+        evaluated = []
+        for tour in population:
+            cost = calculate_tour_cost(tour, matrix)
+            fitness = _calculate_fitness(cost)
+            evaluated.append((tour, cost, fitness))
         
-        # 4. Elitism (Tinh hoa)
-        # Sắp xếp quần thể theo chi phí (thấp đến cao)
-        sorted_population = sorted(zip(population, costs), key=lambda x: x[1])
+        # 4. Sắp xếp theo cost
+        evaluated.sort(key=lambda x: x[1])
         
-        # Cập nhật giải pháp tốt nhất toàn cục
-        if sorted_population[0][1] < best_cost_overall:
-            best_cost_overall = sorted_population[0][1]
-            best_tour_overall = sorted_population[0][0].copy()
+        # 5. Cập nhật best overall
+        if evaluated[0][1] < best_cost_overall:
+            best_cost_overall = evaluated[0][1]
+            best_tour_overall = evaluated[0][0].copy()
+            no_improve_count = 0
+        else:
+            no_improve_count += 1
+        
+        # 6. Kiểm tra diversity
+        diversity = _calculate_diversity([x[0] for x in evaluated])
+        
+        # 7. Restart nếu mất diversity
+        if diversity < diversity_threshold and gen > 50:
+            print(f"[Gen {gen}] Diversity {diversity:.1%} < threshold, RESTARTING...")
             
-        # Tạo thế hệ mới, bắt đầu bằng các cá thể 'tinh hoa'
-        new_population = [tour for tour, cost in sorted_population[:elite_size]]
+            # Giữ top 10%, tạo mới 90%
+            keep_count = max(5, population_size // 10)
+            population = [x[0] for x in evaluated[:keep_count]]
+            
+            # Tạo mới với một nửa random, một nửa greedy
+            while len(population) < population_size:
+                if len(population) < population_size // 2:
+                    # Random
+                    tour = list(range(num_cities))
+                    random.shuffle(tour)
+                else:
+                    # Greedy từ random start
+                    start = random.randint(0, num_cities - 1)
+                    tour = _greedy_init(matrix, start)
+                population.append(tour)
+            continue
         
-        # 5. Lai ghép & Đột biến (lấp đầy phần còn lại của thế hệ mới)
+        # 8. Adaptive mutation rate
+        current_mutation_rate = mutation_rate
+        if no_improve_count > 30:
+            current_mutation_rate = min(0.4, mutation_rate * 2)
+        elif no_improve_count > 50:
+            current_mutation_rate = min(0.5, mutation_rate * 3)
+        
+        # 9. Elitism
+        new_population = [x[0].copy() for x in evaluated[:elite_size]]
+        
+        # 10. Tạo thế hệ mới
+        tours = [x[0] for x in evaluated]
+        fitnesses = [x[2] for x in evaluated]
+        
         while len(new_population) < population_size:
-            # Chọn lọc cha mẹ
-            parent1 = _tournament_selection(population, fitnesses, tournament_k)
-            parent2 = _tournament_selection(population, fitnesses, tournament_k)
+            # Selection
+            parent1 = _tournament_selection(tours, fitnesses, tournament_k)
+            parent2 = _tournament_selection(tours, fitnesses, tournament_k)
             
-            # Lai ghép
-            child = _ordered_crossover(parent1, parent2)
+            # Crossover (Order Crossover - tốt nhất cho TSP)
+            child = _order_crossover(parent1, parent2)
             
-            # Đột biến
-            if random.random() < mutation_rate:
-                child = _swap_mutation(child)
-                
+            # Mutation với 3 loại
+            if random.random() < current_mutation_rate:
+                mut_choice = random.random()
+                if mut_choice < 0.5:
+                    child = _swap_mutation(child)
+                elif mut_choice < 0.85:
+                    child = _two_opt_mutation(child)
+                else:
+                    child = _scramble_mutation(child)
+            
             new_population.append(child)
-            
-        # Thế hệ mới thay thế thế hệ cũ
+        
         population = new_population
-
+        
+        # 11. Logging
+        if (gen + 1) % 50 == 0 or gen < 5:
+            print(f"[Gen {gen+1:3d}] Best={int(best_cost_overall):6d}, "
+                  f"Current={int(evaluated[0][1]):6d}, "
+                  f"Diversity={diversity:.1%}, "
+                  f"MutRate={current_mutation_rate:.1%}, "
+                  f"NoImprove={no_improve_count}")
+    
     return best_tour_overall, int(best_cost_overall)
