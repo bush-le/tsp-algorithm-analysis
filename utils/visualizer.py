@@ -2,29 +2,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Optional
 
-def plot_tour(tour: List[int] | np.ndarray,
-              coords: np.ndarray,
-              title: str = "Lộ trình TSP",
-              save_path: Optional[str] = None):
+def plot_tour(coords, tour, title, save_path=None):
     """
     Vẽ một lộ trình (tour) TSP bằng Matplotlib.
 
-    Hàm này vẽ các thành phố dưới dạng các điểm và lộ trình dưới dạng các đường
-    nối các điểm đó theo thứ tự được chỉ định, bao gồm cả cạnh
-    quay về điểm bắt đầu.
-
     Args:
         tour (List[int] | np.ndarray): Danh sách hoặc mảng các ID nút 
-                                      (0-indexed) theo thứ tự.
-        coords (np.ndarray): Mảng (N, 2) chứa tọa độ [x, y] của các nút.
+                                        (0-indexed) theo thứ tự.
+        coords (np.ndarray | List): Mảng (N, 2) hoặc List các tuple (x, y) 
+                                   chứa tọa độ của các nút.
         title (str): Tiêu đề cho biểu đồ.
         save_path (Optional[str]): Đường dẫn file để lưu hình ảnh 
                                    (ví dụ: 'results/my_tour.png').
-                                   Nếu là None, biểu đồ sẽ được hiển thị.
     """
+    
+    # --- SỬA LỖI: Chuyển đổi coords (list of tuples) thành NumPy array ---
+    # data_loader trả về một list, nhưng indexing (tour_coords = coords[tour])
+    # yêu cầu coords phải là một NumPy array.
+    if not isinstance(coords, np.ndarray):
+        coords = np.array(coords)
+    # --- KẾT THÚC SỬA LỖI ---
+    
     if not isinstance(tour, np.ndarray):
         tour = np.array(tour)
-        
+
     # Sắp xếp lại mảng tọa độ theo thứ tự của tour
     # tour_coords[i] sẽ là tọa độ của nút tour[i]
     tour_coords = coords[tour]
@@ -43,8 +44,6 @@ def plot_tour(tour: List[int] | np.ndarray,
     plt.plot(x, y, 'b-') # 'b-' là đường liền màu xanh
     
     # Vẽ các điểm (thành phố)
-    # Lấy x, y gốc từ 'coords' để đảm bảo vẽ tất cả các điểm
-    # (Mặc dù trong TSP chúng ta thường đi qua tất cả các điểm)
     plt.scatter(coords[:, 0], coords[:, 1], color='red', s=50, zorder=3)
     
     # Đánh dấu điểm bắt đầu (nút 0 của tour)
@@ -62,8 +61,12 @@ def plot_tour(tour: List[int] | np.ndarray,
     
     if save_path:
         # Lưu file hình ảnh vào thư mục /results/
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Đã lưu biểu đồ vào {save_path}")
+        try:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Đã lưu biểu đồ vào {save_path}")
+        except Exception as e:
+            print(f"LỖI: Không thể lưu hình ảnh vào {save_path}. Lỗi: {e}")
+            
         plt.close() # Đóng hình để tránh hiển thị trong kịch bản (script)
     else:
         plt.show() # Hiển thị biểu đồ tương tác
