@@ -165,19 +165,20 @@ class LogisticsPlannerApp(ctk.CTk):
         self.problem_name = os.path.basename(file_path).replace('.tsp', '')
         
         try:
-            problem_data = data_loader.load_problem(self.problem_name, self.data_dir)
-            self.matrix = problem_data['matrix']
-            self.coords = problem_data['coords']
-            if problem_data['optimum_tour']:
-                self.opt_cost = evaluator.calculate_tour_cost(problem_data['optimum_tour'], self.matrix)
-            else:
-                self.opt_cost = 0
+            # 1. Tải dữ liệu tọa độ và ma trận khoảng cách
+            self.coords, self.matrix = data_loader.load_tsp_problem(self.problem_name, self.data_dir)
+
+            # 2. Tải lời giải tối ưu (nếu có) và tính chi phí
+            opt_tour, opt_cost = data_loader.load_optimum_solution(self.problem_name, self.data_dir, self.matrix)
+            self.opt_cost = opt_cost
             
             # Cập nhật GUI
             self.problem_label.configure(text=f"Tệp: {self.problem_name} (N={self.matrix.shape[0]})")
             self.run_button.configure(state="normal") # Kích hoạt nút chạy
             self.previous_result = {} # Xóa so sánh
             print(f"Đã tải {self.problem_name} thành công.")
+            if self.opt_cost > 0:
+                print(f"  -> Đã tìm thấy chi phí tối ưu: {self.opt_cost}")
         
         except Exception as e:
             self.problem_label.configure(text=f"Lỗi khi tải {self.problem_name}: {e}")
