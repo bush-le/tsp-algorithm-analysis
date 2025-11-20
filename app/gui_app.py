@@ -25,7 +25,7 @@ if project_root not in sys.path:
 # --- 2. IMPORT CÁC MODULE CỦA DỰ ÁN ---
 try:
     from utils import data_loader, evaluator, visualizer
-    from algorithms import (
+    from algorithms import ( # noqa: F401
         brute_force, held_karp, nearest_neighbor, nearest_insertion,
         christofides, two_opt, simulated_annealing, genetic_algorithm,
         ant_colony, tabu_search
@@ -96,12 +96,30 @@ class LogisticsPlannerApp(ctk.CTk):
         self.load_button = ctk.CTkButton(self.control_frame, text="Tải Tệp Đơn hàng (.tsp)", command=self.load_problem)
         self.load_button.pack(pady=5, padx=10, fill="x")
 
+        # --- 1b. Khu vực Tạo Dữ liệu Ngẫu nhiên ---
+        ctk.CTkLabel(self.control_frame, text="Hoặc Tạo Dữ liệu Mới", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(20, 5), anchor="w", padx=10)
+
+        gen_frame = ctk.CTkFrame(self.control_frame, fg_color="transparent")
+        gen_frame.pack(fill="x", padx=10, pady=5)
+        gen_frame.grid_columnconfigure(0, weight=1)
+        gen_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(gen_frame, text="Tên Vấn đề:").grid(row=0, column=0, sticky="w")
+        self.gen_name_entry = ctk.CTkEntry(gen_frame, placeholder_text="e.g., random_50")
+        self.gen_name_entry.grid(row=1, column=0, sticky="ew", padx=(0, 5))
+
+        ctk.CTkLabel(gen_frame, text="Số TP (N):").grid(row=0, column=1, sticky="w")
+        self.gen_cities_entry = ctk.CTkEntry(gen_frame, placeholder_text="e.g., 50")
+        self.gen_cities_entry.grid(row=1, column=1, sticky="ew", padx=(5, 0))
+
+        self.generate_button = ctk.CTkButton(self.control_frame, text="Tạo và Tải", command=self.generate_and_load_problem)
+        self.generate_button.pack(pady=5, padx=10, fill="x")
+
         self.problem_label = ctk.CTkLabel(self.control_frame, text=f"Tệp: {self.problem_name}", text_color="gray")
         self.problem_label.pack(pady=5, padx=10, anchor="w")
 
         # --- 2. Khu vực Cài đặt Chi phí ---
         ctk.CTkLabel(self.control_frame, text="2. Cài đặt Chi phí", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10, anchor="w", padx=10)
-        
         ctk.CTkLabel(self.control_frame, text="Chi phí mỗi Km (VND):").pack(anchor="w", padx=10)
         self.cost_km_entry = ctk.CTkEntry(self.control_frame, placeholder_text="10000")
         self.cost_km_entry.insert(0, "10000")
@@ -151,6 +169,10 @@ class LogisticsPlannerApp(ctk.CTk):
 
     # --- 4. CÁC HÀM LOGIC (CALLBACKS) ---
 
+    def _show_error(self, message):
+        """Hiển thị thông báo lỗi trên problem_label."""
+        self.problem_label.configure(text=message, text_color="red")
+
     def load_problem(self):
         """Mở hộp thoại tệp và tải vấn đề TSP."""
         file_path = filedialog.askopenfilename(
@@ -161,27 +183,54 @@ class LogisticsPlannerApp(ctk.CTk):
         if not file_path:
             return
 
-        # Lấy tên file (ví dụ: 'berlin52')
-        self.problem_name = os.path.basename(file_path).replace('.tsp', '')
-        
-        try:
-            # 1. Tải dữ liệu tọa độ và ma trận khoảng cách
-            self.coords, self.matrix = data_loader.load_tsp_problem(self.problem_name, self.data_dir)
+        problem_name = os.path.basename(file_path).replace('.tsp', '')
+        self._load_problem_data(problem_name)
 
-            # 2. Tải lời giải tối ưu (nếu có) và tính chi phí
+    def generate_and_load_problem(self):
+        """Tạo một vấn đề TSP mới và tải nó."""
+        from utils import generator # Import tại đây để tránh import vòng
+
+        problem_name = self.gen_name_entry.get()
+        num_cities_str = self.gen_cities_entry.get()
+
+        if not problem_name:
+            self._show_error("Lỗi: Vui lòng nhập tên vấn đề.")
+            return
+        if not num_cities_str.isdigit() or int(num_cities_str) <= 2:
+            self._show_error("Lỗi: Số thành phố phải là số > 2.")
+            return
+
+        num_cities = int(num_cities_str)
+        print(f"Đang tạo vấn đề '{problem_name}' với {num_cities} thành phố...")
+
+        try:
+            generator.generate_problem(
+                problem_name=problem_name,
+                num_cities=num_cities,
+                data_dir=self.data_dir
+            )
+            # Tải dữ liệu vừa được tạo
+            self._load_problem_data(problem_name, is_generated=True)
+        except Exception as e:
+            self._show_error(f"Lỗi khi tạo file: {e}")
+
+    def _load_problem_data(self, problem_name, is_generated=False):
+        """Hàm nội bộ để tải dữ liệu từ một tên vấn đề."""
+        self.problem_name = problem_name
+        try:
+            self.coords, self.matrix = data_loader.load_tsp_problem(self.problem_name, self.data_dir, handle_outliers=not is_generated)
             opt_tour, opt_cost = data_loader.load_optimum_solution(self.problem_name, self.data_dir, self.matrix)
             self.opt_cost = opt_cost
-            
-            # Cập nhật GUI
-            self.problem_label.configure(text=f"Tệp: {self.problem_name} (N={self.matrix.shape[0]})")
-            self.run_button.configure(state="normal") # Kích hoạt nút chạy
-            self.previous_result = {} # Xóa so sánh
+
+            self.problem_label.configure(text=f"Tệp: {self.problem_name} (N={self.matrix.shape[0]})", text_color="gray")
+            self.run_button.configure(state="normal")
+            self.previous_result = {}
             print(f"Đã tải {self.problem_name} thành công.")
             if self.opt_cost > 0:
                 print(f"  -> Đã tìm thấy chi phí tối ưu: {self.opt_cost}")
-        
+
         except Exception as e:
-            self.problem_label.configure(text=f"Lỗi khi tải {self.problem_name}: {e}")
+            self._show_error(f"Lỗi khi tải {self.problem_name}: {e}")
             self.run_button.configure(state="disabled")
 
     def run_calculation(self):
